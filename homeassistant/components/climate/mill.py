@@ -232,12 +232,13 @@ class MillHeater(ClimateDevice):
 
 
 class MillRoom(ClimateDevice):
-    """Representation of a Mill Room virtual termostat."""
+    """Representation of a Mill Room virtual thermostat."""
 
     def __init__(self, room, mill_data_connection):
         """Initialize the thermostat."""
         self._room = room
         self._conn = mill_data_connection
+        self._throttle_all_time = None
 
     @property
     def supported_features(self):
@@ -280,7 +281,14 @@ class MillRoom(ClimateDevice):
     @property
     def target_temperature(self):
         """Return the temperature we try to reach."""
-        return self._room.comfort_temp  # todo
+        if self._room.current_mode == 1:
+            return self._room.comfort_temp
+        elif self._room.current_mode == 2:
+            return self._room.sleep_temp
+        elif self._room.current_mode == 3:
+            return self._room.away_temp
+        else:
+            return None
 
     @property
     def target_temperature_step(self):
@@ -324,11 +332,23 @@ class MillRoom(ClimateDevice):
             return
         return
 
-
     async def async_update(self):
         """Retrieve latest state."""
-        self._heater = await self._conn.update_rooms()
+        self._room = await self.update_room(self._room.room_id)
 
     async def async_set_operation_mode(self, operation_mode):
         """Set operation mode."""
         return
+
+    async def throttle_update_all_heaters(self):
+        import datetime as dt
+        if (self._throttle_all_time is not None
+                and dt.datetime.now() - self._throttle_all_time
+                < dt.timedelta(seconds=10)):
+            return
+        self._throttle_all_time = dt.datetime.now()
+        await self._conn.find_all_heaters()
+
+    async def update_room(self, room_id):
+        await self.throttle_update_all_heaters()
+        return self._conn.rooms.get(room_id)

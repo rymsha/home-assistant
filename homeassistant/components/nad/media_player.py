@@ -64,7 +64,6 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
             config.get(CONF_SOURCE_DICT)
         )], True)
     elif config.get(CONF_TYPE) == 'Telnet':
-        from nad_receiver import NADReceiverTelnet
         add_entities([NAD(
             config.get(CONF_NAME),
             NADReceiverTelnet(config.get(CONF_HOST),
@@ -325,3 +324,90 @@ class NADtcp(MediaPlayerDevice):
             volume_internal = (nad_volume - self._min_vol) / \
                               (self._max_vol - self._min_vol)
         return volume_internal
+
+
+from nad_receiver import NADReceiver
+import threading
+import telnetlib
+import re
+
+
+class NADReceiverTelnet(NADReceiver):
+
+    def __init__(self, host, port=23, timeout=1):
+        """Create NADTelnet."""
+        self.telnet = None
+        self.host = host
+        self.port = port
+        self.timeout = timeout
+        self.lock = threading.Lock()
+
+    def __del__(self):
+        """
+        Close any telnet session
+        """
+        self._close_connection()
+
+    def _open_connection(self):
+        try:
+            if self.telnet is None:
+                self.telnet = telnetlib.Telnet(self.host, self.port, self.timeout * 3)
+                msg = self.telnet.read_until('\n'.encode(), self.timeout)
+                _LOGGER.info("NAD connection responded with %s", msg)
+        except Exception as e:
+            self.telnet = None
+            raise e
+        return self.telnet
+
+    def _close_connection(self):
+        """
+        Close any telnet session
+        """
+        try:
+            if self.telnet:
+                self.telnet.close()
+        except:
+            _LOGGER.exception("NAD connection cannot be closed")
+        finally:
+            self.telnet = None
+
+    def exec_command(self, domain, function, operator, value=None):
+        """
+        Write a command to the receiver and read the value it returns.
+        """
+        cmd = self._format_command(domain, function, operator, value)
+        with self.lock:
+            try:
+                telnet = self._open_connection()
+                # For telnet the first \r / \n is recommended only
+                telnet.write((''.join(['\r', cmd, '\n']).encode()))
+                msg = telnet.read_until('\n'.encode(), self.timeout)
+                _LOGGER.debug("NAD responded with %s", msg)
+            except Exception as e:
+                self._close_connection()
+                raise e
+
+            pattern = ''.join(['.'.join([domain, function]), '=(.+?)\r'])
+            m = re.search(pattern, msg.decode(), re.IGNORECASE)
+            if m:
+                return m.group(1)
+            else:
+                raise RuntimeError('Failed to read response %s by %s' %
+                                   (msg, pattern.encode()))
+
+    @staticmethod
+    def _format_command(domain, function, operator, value):
+        from nad_receiver.nad_commands import CMDS
+
+        if operator in CMDS[domain][function]['supported_operators']:
+            if operator is '=' and value is None:
+                raise ValueError('No value provided')
+
+            if value is None:
+                cmd = ''.join([CMDS[domain][function]['cmd'], operator])
+            else:
+                cmd = ''.join(
+                    [CMDS[domain][function]['cmd'], operator, str(value)])
+        else:
+            raise ValueError('Invalid operator provided %s' % operator)
+        return cmd

@@ -7,6 +7,7 @@ import voluptuous as vol
 from homeassistant.components.climate import ClimateDevice, PLATFORM_SCHEMA
 from homeassistant.components.climate.const import (
     DOMAIN, STATE_HEAT,
+    STATE_AUTO,
     SUPPORT_TARGET_TEMPERATURE, SUPPORT_FAN_MODE,
     SUPPORT_ON_OFF, SUPPORT_OPERATION_MODE)
 from homeassistant.const import (
@@ -215,3 +216,113 @@ class MillHeater(ClimateDevice):
             await self.async_turn_off()
         else:
             _LOGGER.error("Unrecognized operation mode: %s", operation_mode)
+
+
+class MillRoom(ClimateDevice):
+    """Representation of a Mill Room virtual thermostat."""
+
+    def __init__(self, room, mill_data_connection):
+        """Initialize the thermostat."""
+        self._room = room
+        self._conn = mill_data_connection
+        self._throttle_all_time = None
+
+    @property
+    def supported_features(self):
+        """Return the list of supported features."""
+        return 0
+
+    @property
+    def available(self):
+        """Return True if entity is available."""
+        return not self._room.is_offline
+
+    @property
+    def unique_id(self):
+        """Return a unique ID."""
+        return self._room.room_id
+
+    @property
+    def name(self):
+        """Return the name of the entity."""
+        return self._room.name
+
+    @property
+    def device_state_attributes(self):
+        """Return the state attributes."""
+        res = {
+            "comfort_temp": self._room.comfort_temp,
+            "away_temp": self._room.away_temp,
+            "sleep_temp": self._room.sleep_temp,
+            "heating": self._room.heat_status,
+            "home_name": self._room.home_name,
+            "current_mode": self._room.current_mode,
+        }
+        return res
+
+    @property
+    def temperature_unit(self):
+        """Return the unit of measurement which this thermostat uses."""
+        return TEMP_CELSIUS
+
+    @property
+    def target_temperature(self):
+        """Return the temperature we try to reach."""
+        if self._room.current_mode == 1:
+            return self._room.comfort_temp
+        elif self._room.current_mode == 2:
+            return self._room.sleep_temp
+        elif self._room.current_mode == 3:
+            return self._room.away_temp
+        else:
+            return None
+
+    @property
+    def target_temperature_step(self):
+        """Return the supported step of target temperature."""
+        return 1
+
+    @property
+    def current_temperature(self):
+        """Return the current temperature."""
+        return self._room.avg_temp
+
+    @property
+    def is_on(self):
+        """Return true if heater is on."""
+        return self._room.current_mode in [1, 2, 3]
+
+    @property
+    def min_temp(self):
+        """Return the minimum temperature."""
+        return MIN_TEMP
+
+    @property
+    def max_temp(self):
+        """Return the maximum temperature."""
+        return MAX_TEMP
+
+    @property
+    def current_operation(self):
+        """Return current operation."""
+        return STATE_AUTO
+
+    @property
+    def operation_list(self):
+        """List of available operation modes."""
+        return None
+
+    async def async_set_temperature(self, **kwargs):
+        """Set new target temperature."""
+        temperature = kwargs.get(ATTR_TEMPERATURE)
+        if temperature is None:
+            return
+        return
+
+    async def async_update(self):
+        """Retrieve latest state."""
+        self._room = await self._conn.update_room(self._room.room_id)
+
+    async def async_set_operation_mode(self, operation_mode):
+        """Set operation mode."""
+        return

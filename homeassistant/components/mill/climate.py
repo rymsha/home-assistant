@@ -18,6 +18,8 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 _LOGGER = logging.getLogger(__name__)
 
+EXPORT_ROOMS = 'export_rooms'
+
 ATTR_AWAY_TEMP = 'away_temp'
 ATTR_COMFORT_TEMP = 'comfort_temp'
 ATTR_ROOM_NAME = 'room_name'
@@ -32,6 +34,7 @@ SUPPORT_FLAGS = (SUPPORT_TARGET_TEMPERATURE |
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_USERNAME): cv.string,
     vol.Required(CONF_PASSWORD): cv.string,
+    vol.Optional(EXPORT_ROOMS, default=True): cv.boolean,
 })
 
 SET_ROOM_TEMP_SCHEMA = vol.Schema({
@@ -56,6 +59,11 @@ async def async_setup_platform(hass, config, async_add_entities,
     await mill_data_connection.find_all_heaters()
 
     dev = []
+
+    if config[EXPORT_ROOMS]:
+        for room in mill_data_connection.rooms.values():
+            dev.append(MillRoom(room, mill_data_connection))
+
     for heater in mill_data_connection.heaters.values():
         dev.append(MillHeater(heater, mill_data_connection))
     async_add_entities(dev)
